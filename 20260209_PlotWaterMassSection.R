@@ -168,7 +168,7 @@ plot_watermass_section <- function(
   watermass_colors <- c(
     "PMW"  = "#5DA5DAFF",  
     "UHW"  = "#FAA43AFF",  
-    "CBAW" = "#F15854FF",  
+    # "CBAW" = "#F15854FF",  
     "BBPW" = "#60BD68FF",  
     "SPMW" = "#B276B2FF", 
     "Mixed" = "grey25"

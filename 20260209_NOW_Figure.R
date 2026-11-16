@@ -99,6 +99,7 @@ Water_order <- c("PMW", "UHW", "BBPW", "SPMW", "CBAW")
 var_levels <- c(
   "Temperature", "Salinity", # Physical properties
   "Nitrate", "Phosphate", "Silicate", # "Oxconc", # Major nutrients + oxygen
+  "NP", "SiN", "SiP",
   "Nstar", "fPW" # Derived nutrient tracers
 )
 
@@ -116,7 +117,12 @@ var_labels <- list(
   Phosphate   = "Phosphate (µM)",
   Silicate    = "Silicate (µM)",
   Oxconc      = expression(O[2] ~ "(µM)"), # Dissolved oxygen with subscript
-
+  
+  # >>> Nutrient ratios
+  NP = "N/P",
+  SiN = "Si/N",
+  SiP = "Si/P",
+  
   # Derived tracers
   Nstar       = "N*", # Nitrate deficit tracer
   fPW         = "fPW", # Pacific Water fraction
@@ -670,8 +676,8 @@ wm_plot
 #   plot = wm_plot,
 #   filename = paste0("wm_plot", file.format),      # Descriptive filename
 #   path = file.path,                                                       # Global output directory
-#   width = 20,                                                             # Wide format for side-by-side panels
-#   height = 5,                                                             # Appropriate height for detail
+#   width = 22.5,                                                             # Wide format for side-by-side panels
+#   height = 7.5,                                                             # Appropriate height for detail
 #   dpi = 300                                                               # Publication-quality resolution
 # )
 
@@ -814,7 +820,23 @@ wm_stat <- NOW %>%
   mutate(
     variable = factor(variable, levels = var_levels), # Maintain canonical variable order
     Var.plot = var_labels[as.character(variable)] # Apply readable plot labels
+  ) %>%
+  left_join(
+    .,
+    NOW %>% group_by(Station_Cluster) %>% summarise(lon_med = median(decimalLongitude, na.rm = TRUE), .groups = "drop")
   )
+
+# Table de correspondance station <-> longitude médiane
+station_axis <- NOW %>%
+  filter(!classification %in% "Mixed") %>% # Focus on classified observations
+  group_by(Station_Cluster, classification) %>% # Group by station and water mass
+  get_summary_stats(Depth, type = "full") %>% # Full depth statistics
+  left_join(
+    .,
+    NOW %>% group_by(Station_Cluster) %>% summarise(lon_med = median(decimalLongitude, na.rm = TRUE), .groups = "drop")
+  ) %>% 
+  distinct(Station_Cluster, lon_med) %>% 
+  arrange(lon_med)
 
 # View(
 #   wm_stat %>%
@@ -844,51 +866,107 @@ wm_stat <- NOW %>%
 #'   \item Position dodge: Separate overlapping water masses at same station
 #'   \item Consistent coloring: Matches water mass diagnostic plots
 #' }
-plot_linerange <- function(data, variable = NULL) {
-  ggplot(data) +
-    # Interquartile range as vertical line segments
+plot_linerange <- function(data, show_lon_axis = FALSE) {
+  
+  station_axis <- data |>
+    dplyr::distinct(Station_Cluster, lon_med) |>
+    dplyr::arrange(lon_med)   # west (most negative) → east
+  
+  p <- ggplot(data) +
     geom_linerange(
-      aes(
-        factor(Station_Cluster), median, # X: station, Y: median value
-        ymin = q1, ymax = q3, # Range: 25th to 75th percentile
-        colour = classification # Color by water mass
-      ),
-      position = position_dodge2(width = 0.9, preserve = "single"), # Separate overlapping points
-      linewidth = 1.2 # Prominent line width for visibility
+      aes(lon_med, median,                # ← retiré le signe négatif
+          ymin = q1, ymax = q3,
+          colour = classification),
+      position  = position_dodge2(width = 0.25, preserve = "single"),
+      linewidth = 1.2
     ) +
-
-    # Median values as filled points with water mass-specific shapes
     geom_point(
-      aes(
-        factor(Station_Cluster), median, # X: station, Y: median value
-        shape = classification, # Shape by water mass
-        fill = classification # Fill color by water mass
-      ),
-      position = position_dodge2(width = 0.9, preserve = "single"), # Match line range positioning
-      size = 3.5 # Prominent point size
+      aes(lon_med, median,                # ← idem
+          shape = classification,
+          fill  = classification),
+      position = position_dodge2(width = 0.25, preserve = "single"),
+      size = 3.5
     ) +
-
-    # Water mass color schemes consistent with diagnostic plots
-    scale_fill_manual(values = wm_palette, name = "Water Mass") +
+    scale_fill_manual(values = wm_palette,  name = "Water Mass") +
     scale_color_manual(values = wm_palette, name = "Water Mass") +
-
-    # Water mass shape mapping for additional distinction
-    scale_shape_manual(
-      name = "Water Mass",
-      values = c(21, 22, 23, 24, 25) # Filled geometric shapes
-    ) +
-
-    # Axis labels and scaling
-    labs(
-      x = "Station", # Clear x-axis identification
-      y = var_labels[[as.character(data$variable[1])]] # Variable-specific y-axis label
-    ) +
-
-    # Y-axis expansion for visual clarity
-    scale_y_continuous(expand = expansion(mult = c(0.25, 0.25))) +
-
-    # Consistent theme across vertical structure plots
-    base_theme
+    scale_shape_manual(name = "Water Mass", values = c(21, 22, 23, 24, 25)) +
+    scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+    labs(x = NULL,
+         y = var_labels[[as.character(data$variable[1])]]) +
+    theme_classic(base_size = 15) +
+    theme(
+      axis.text        = element_text(colour = "black"), # Black text for better contrast
+      axis.ticks.x.top = element_blank(), # Remove top axis ticks
+      axis.line.x.top  = element_blank(),  # Remove top axis line
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 2),
+      axis.line = element_blank(),
+      strip.background = element_rect(fill = "grey50", linewidth = 2), # Prominent facet headers
+      strip.text = element_text(face = "bold"), # Bold water mass names
+      legend.position = "none" # Remove redundant legend
+    )
+  
+  if (show_lon_axis) {
+    # Breaks cohérents avec les autres figures (section verticale)
+    lon_breaks <- seq(
+      floor(min(NOW$decimalLongitude)) - 1.5,   # ex. -79
+      ceiling(max(NOW$decimalLongitude)) + 1.5, # ex. -71
+      by = 1
+    )
+    
+    p <- p +
+      scale_x_continuous(
+        breaks = lon_breaks,
+        labels = function(x) abs(round(x, 0))   # affiche |lon| → 78, 76, ...
+      ) +
+      guides(x = compose_stack(
+        guide_axis_base(
+          key = key_manual(
+            aesthetic = station_axis$lon_med,    # ← sans le -
+            label     = station_axis$Station_Cluster
+          ),
+          theme = theme(axis.line.x = element_blank(),   
+                        axis.text.x = element_text(size = 15, colour = "black", angle = 45, hjust = 1))
+        ),
+        guide_axis_base(
+          theme = theme(axis.line.x = element_line(linewidth = 0.75),
+                        axis.text.x = element_text(size = 15, colour = "black"))
+        ),
+        side.titles = c("Station", "Longitude (°W)")
+      )) +
+      theme_classic(base_size = 15) +
+      theme(
+        axis.text        = element_text(colour = "black"), # Black text for better contrast
+        axis.ticks.x.top = element_blank(), # Remove top axis ticks
+        axis.line.x.top  = element_blank(),  # Remove top axis line
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 2),
+        axis.line = element_blank(),
+        strip.background = element_rect(fill = "grey50", linewidth = 2), # Prominent facet headers
+        strip.text = element_text(face = "bold"), # Bold water mass names
+        legend.position = "none", # Remove redundant legend
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 35, unit = "pt")
+      )
+  } else {
+    p <- p +
+      scale_x_continuous(
+        breaks = station_axis$lon_med,           # ← sans le -
+        labels = station_axis$Station_Cluster
+      ) +
+      labs(x = NULL) +
+      theme_classic(base_size = 15) +
+      theme(
+        axis.text.x = element_text(size = 15, colour = "black", angle = 45, hjust = 1),
+        axis.text.y        = element_text(size = 15, colour = "black"), # Black text for better contrast
+        axis.ticks.x.top = element_blank(), # Remove top axis ticks
+        axis.line.x.top  = element_blank(),  # Remove top axis line
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 2),
+        axis.line = element_blank(),
+        strip.background = element_rect(fill = "grey50", linewidth = 2), # Prominent facet headers
+        strip.text = element_text(face = "bold"), # Bold water mass names
+        legend.position = "none" # Remove redundant legend
+      )
+  }
+  
+  p
 }
 
 #' Assemble multi-panel figure grid with shared legend for water mass analysis
@@ -922,49 +1000,49 @@ plot_linerange <- function(data, variable = NULL) {
 #' grid <- make_grid(plot_linerange, wm_stat, layout_config)
 #'
 make_grid <- function(plot_function, dataset, layout_config) {
-  # Create blank plot for empty grid positions
-  # Uses theme_void() to ensure clean appearance in multi-panel layout
-  blank_plot <- ggplot() +
-    theme_void()
-
-  # Extract layout configuration parameters
-  variables <- layout_config$variables # Oceanographic variables to display
-  positions <- layout_config$positions # Grid positions for each variable
-  nrow <- layout_config$nrow # Number of rows in grid
-  ncol <- layout_config$ncol # Number of columns in grid
-
-  # Calculate total available positions and initialize containers
+  blank_plot <- ggplot() + theme_void()
+  
+  variables <- layout_config$variables
+  positions <- layout_config$positions
+  nrow      <- layout_config$nrow
+  ncol      <- layout_config$ncol
+  
   total_slots <- nrow * ncol
-  plots_list <- rep(list(blank_plot), total_slots) # Initialize with blanks
-  labels <- rep("", total_slots) # Initialize empty labels
-
-  # Generate plots for each specified variable and position
-  # Loop through variables to maintain correct scientific ordering
-  for (i in 1:length(variables)) {
+  plots_list  <- rep(list(blank_plot), total_slots)
+  labels      <- rep("", total_slots)
+  
+  # Identify bottom panels per column: for each column, find the LAST
+  # occupied position (highest row index among filled slots)
+  col_of <- function(p) ((p - 1) %% ncol) + 1
+  row_of <- function(p) ((p - 1) %/% ncol) + 1
+  
+  occupied   <- positions
+  bottom_pos <- sapply(1:ncol, function(cc) {
+    in_col <- occupied[col_of(occupied) == cc]
+    if (length(in_col) == 0) NA_integer_ else in_col[which.max(row_of(in_col))]
+  })
+  bottom_pos <- bottom_pos[!is.na(bottom_pos)]
+  
+  for (i in seq_along(variables)) {
     pos <- positions[i]
-
-    # Validate position within grid boundaries
     if (!is.na(pos) && pos <= total_slots) {
-      # Filter dataset for current variable and generate plot
-      # This maintains water mass classification consistency across panels
-      plots_list[[pos]] <- plot_function(filter(dataset, variable == variables[i]))
-
-      # Assign sequential panel labels for manuscript referencing
+      plots_list[[pos]] <- plot_function(
+        filter(dataset, variable == variables[i]),
+        show_lon_axis = pos %in% bottom_pos
+      )
       labels[pos] <- LETTERS[i]
     }
   }
-
-  # Assemble multi-panel figure with publication-ready formatting
-  # Uses ggarrange for professional layout with shared legend
+  
   do.call(ggarrange, c(
     plots_list,
     list(
-      labels = labels, # Panel labels (A, B, C, etc.)
-      nrow = nrow, # Grid dimensions
-      ncol = ncol,
-      align = "hv", # Align both horizontally and vertically
-      common.legend = TRUE, # Single shared legend for all panels
-      legend = "right" # Legend position for manuscript format
+      labels        = labels,
+      nrow          = nrow,
+      ncol          = ncol,
+      align         = "hv",
+      common.legend = TRUE,
+      legend        = "right"
     )
   ))
 }
@@ -993,13 +1071,21 @@ make_grid <- function(plot_function, dataset, layout_config) {
 # Define layout configuration for optimal scientific presentation
 layout_config <- list(
   # Variables ordered by oceanographic importance and logical grouping
-  variables = c("Temperature", "Salinity", "Nitrate", "Phosphate", "Silicate", "Nstar", "fPW"),
+  variables = c(
+    "Salinity", "Temperature", 
+    "Nitrate", "Phosphate", "Silicate", 
+    #"NP","SiN","SiP",
+    "Nstar", "fPW"),
 
   # Positions create thematic grouping:
   # Row 1: Physical properties (1,2) + blank (3)
   # Row 2: Primary nutrients (4,5,6)
-  # Row 3: Derived tracer (7) + blanks (8,9)
-  positions = c(1, 2, 4, 5, 6, 7, 8),
+  # Row 3: Primary nutrients (7,8,9)
+  # Row 4: Derived tracer (10,11) + blanks (12)
+  positions = c(
+    1, 2, 
+    4, 5, 6, 
+    7, 8),
 
   # Grid dimensions optimized for manuscript format
   nrow = 3, # Three rows for thematic organization
@@ -1048,39 +1134,43 @@ wm_vertical_structure
 #'   \item SPMW (Subpolar Mode Water): >400m
 #'   \item CBAW (Canada Basin Atlantic Water): >500m (deepest)
 #' }
+
 wm_depth_stats <- NOW %>%
   filter(!classification %in% "Mixed") %>% # Focus on classified observations
   group_by(Station_Cluster, classification) %>% # Group by station and water mass
-  get_summary_stats(Depth, type = "full") # Full depth statistics
+  get_summary_stats(Depth, type = "full") %>% # Full depth statistics
+  left_join(
+    .,
+    NOW %>% group_by(Station_Cluster) %>% summarise(lon_med = median(decimalLongitude, na.rm = TRUE), .groups = "drop")
+  )
 
-# View(
-#   wm_depth_stats %>%
-#   mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
-#   select(Station_Cluster,classification,variable,n,median,iqr)
-#   )
+# Table de correspondance station <-> longitude médiane
+station_axis <- wm_depth_stats %>%
+  distinct(Station_Cluster, lon_med) %>%
+  arrange(lon_med)
 
 # Create water mass depth distribution plot
 wm_depth_plot <- ggplot(wm_depth_stats) +
   # Depth range as vertical line segments (IQR)
   geom_linerange(
     aes(
-      factor(Station_Cluster), median, # X: station, Y: median depth
+      -lon_med, median, # X: longitude, Y: median depth
       ymin = q1, ymax = q3, # Range: depth IQR
       colour = classification # Color by water mass
     ),
-    position = position_dodge2(width = 0.9, preserve = "single"), # Separate overlapping ranges
-    linewidth = 1.2 # Prominent line width
+    # position  = position_dodge2(width = 0.25, preserve = "single"),
+    linewidth = 1.2
   ) +
 
   # Median depths as filled points
   geom_point(
     aes(
-      factor(Station_Cluster), median, # X: station, Y: median depth
-      fill = classification, # Fill by water mass
-      shape = classification # Shape by water mass
+      -lon_med, median,
+      fill = classification,
+      shape = classification
     ),
-    position = position_dodge2(width = 0.9, preserve = "single"), # Match line positioning
-    size = 3.5 # Prominent point size
+    # position = position_dodge2(width = 0.25, preserve = "single"),
+    size = 3.5
   ) +
 
   # Consistent water mass aesthetics
@@ -1090,14 +1180,36 @@ wm_depth_plot <- ggplot(wm_depth_stats) +
     name = "Water Mass",
     values = c(21, 22, 23, 24, 25) # Water mass-specific shapes
   ) +
+  scale_x_reverse(
+    breaks = seq(
+      round(max(-NOW$decimalLongitude), 1) + 1.5,
+      round(min(-NOW$decimalLongitude), 1) - 1.5,
+      by = -1
+    )
+  ) +
 
   # Inverted y-axis following oceanographic convention (depth increases downward)
   scale_y_reverse(expand = expansion(mult = c(0.25, 0.25))) +
 
-  # Clear axis labeling
+  # Double axe X empilé : Longitude puis Station, titres à droite
+  guides(x = compose_stack(
+    guide_axis_base(
+      key = key_manual(
+        aesthetic = -station_axis$lon_med,
+        label     = station_axis$Station_Cluster
+      ),
+      theme = theme(axis.line.x = element_blank())
+    ),
+    guide_axis_base(
+      theme = theme(axis.line.x = element_line(linewidth = 0.75))
+    ),
+    side.titles = c("Station", "Longitude (°W)")
+  )) +
+
+  # Axis labels (y seulement ; x géré par les guides)
   labs(
-    x = "Station", # Station identification
-    y = "Depth (m)" # Depth in meters
+    x = NULL,
+    y = "Depth (m)"
   ) +
 
   # Enhanced theme for standalone figure
@@ -1106,7 +1218,9 @@ wm_depth_plot <- ggplot(wm_depth_stats) +
     panel.border = element_rect(color = "black", fill = NA, linewidth = 2), # Prominent border
     strip.background = element_rect(fill = "grey50"), # Grey strip background
     strip.text = element_text(face = "bold"), # Bold strip text
-    axis.line = element_blank() # Remove axis lines (border sufficient)
+    plot.margin = margin_auto(3, unit = "cm"),
+    axis.line.x = element_line(color = "black", linewidth = 0.6),
+    axis.line.y = element_blank()
   )
 
 # Display water mass depth structure
@@ -1117,8 +1231,8 @@ wm_depth_plot
 #   plot = wm_depth_plot,
 #   filename = paste0("wm_depth", file.format),           # Supplementary figure
 #   path = file.path,                                                       # Global output directory
-#   width = 10,                                                             # Standard width for single-panel
-#   height = 5,                                                             # Appropriate height for depth range
+#   width = 15,                                                             # Standard width for single-panel
+#   height = 7.5,                                                             # Appropriate height for depth range
 #   dpi = 300                                                               # Publication-quality resolution
 # )
 
@@ -1220,12 +1334,12 @@ temporal_trends_processed <- temporal_trends_raw %>%
     Var.plot = factor(var_labels[as.character(variable)], levels = var_labels) # Readable labels
   )
 
-# View(
-#   temporal_trends_processed %>%
-#   mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
-#   mutate(ci = paste0("[", round(ci_lower, 2), " – ", round(ci_upper, 2), "]")) %>%
-#   select(Station_Cluster, classification, variable, n_obs,sen_slope,ci,p_value_signif)
-#   )
+View(
+  temporal_trends_processed %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2))) %>%
+  mutate(ci = paste0("[", round(ci_lower, 2), " – ", round(ci_upper, 2), "]")) %>%
+  select(Station_Cluster, classification, variable, n_obs,sen_slope,ci,p_value_signif)
+  )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 4.3 TREND VISUALIZATION FUNCTIONS
@@ -1771,14 +1885,14 @@ fpw_section <- plot_section(NOW, param = "fPW", contour_var = "self")
 fpw_section
 
 # Save high-resolution figure for manuscript
-ggsave(
-  plot = fpw_section,
-  filename = paste0("fpw_section", file.format),
-  path = file.path,
-  width = 22.5,
-  height = 12.5,
-  dpi = 300
-)
+# ggsave(
+#   plot = fpw_section,
+#   filename = paste0("fpw_section", file.format),
+#   path = file.path,
+#   width = 22.5,
+#   height = 12.5,
+#   dpi = 300
+# )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5.8 PACIFIC WATER REGIME CLASSIFICATION
@@ -1830,3 +1944,54 @@ pw_regime_results %>%
     Dominance_Index = if_else(QC_Flag == "Exclude", NA, round(Dominance_Index, 2)),
     Front_Lon = round(Front_Lon, 1)
   )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SUPPLEMENTARY FIGURE — Si/P RATIO (SPATIAL & TEMPORAL SYNTHESIS)
+# ──────────────────────────────────────────────────────────────────────────────
+
+#' Panel A — Temporal trends of the Si/P ratio
+#'
+#' Heatmap of Sen's slopes for the Si/P ratio across stations and water masses.
+#' Data are filtered to retain the single derived tracer of interest (SiP)
+#' before being passed to the generic trend-heatmap constructor.
+SiP_Sen <-
+  temporal_trends_processed %>%
+  filter(variable == "SiP") %>%                                          # Keep Si/P tracer only
+  create_trend_heatmap(
+    fill_col = "sen_slope_plot",                                         # Fill: Sen's slope magnitude
+    fill_lab = "Sen's slope"                                            # Legend title
+  )
+
+#' Panel B — Spatial distribution of the Si/P ratio
+#'
+#' Line-range plot summarizing the median Si/P ratio (with IQR) by water mass
+#' along the NOW transect. Longitude axis enabled to anchor the spatial reading.
+SiP_wm <- plot_linerange(
+  wm_stat %>% filter(variable %in% "SiP"),                               # Subset Si/P statistics
+  show_lon_axis = TRUE                                                   # Display longitude reference
+) + theme(legend.position = "right")
+
+# ── Compose the two-panel supplementary figure ───────────────────────────────
+#' Combine temporal (A) and spatial (B) views into one publication-ready figure.
+SiP <- ggpubr::ggarrange(
+  SiP_wm, SiP_Sen,                                                       # Two main visualization panels
+  # get_legend,                                                          # (optional shared legend)
+  labels = LETTERS,                                                      # Scientific panel labels (A, B)
+  nrow   = 1,                                                            # Single-row layout
+  ncol   = 2,                                                            # Side-by-side columns
+  widths  = c(1, 1),                                                     # Equal panel widths
+  heights = c(1, 1),                                                     # Equal panel heights
+  align   = "v"                                                          # Vertical alignment for clean look
+)
+
+# ── Export ────────────────────────────────────────────────────────────────────
+#' Write the supplementary Si/P figure to disk at publication quality.
+ggsave(
+  plot     = SiP,
+  filename = paste0("SiP", file.format),                                 # Descriptive filename
+  path     = file.path,                                                  # Global output directory
+  width    = 20,                                                         # Wide format for side-by-side panels
+  height   = 5,                                                          # Appropriate height for detail
+  dpi      = 300                                                         # Publication-quality resolution
+)
+

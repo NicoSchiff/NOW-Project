@@ -7,7 +7,7 @@
 #   ANP = 0 → pure Atlantic end-member
 #   ANP = 1 → pure Pacific end-member
 ANP <- function(Phosphate, Nitrogen,
-                slope_AW  = 17.499,  int_AW  = -3.072, # Atlantic line (default: Jones et al.)
+                slope_AW  = 18.34862,  int_AW  = -3.513761, # Atlantic line (default: Jones et al.)
                 slope_PW  = 13.957,  int_PW  = -11.306) # Pacific line (default: Yamamoto-Kawai et al.)
 {
   stopifnot(length(Phosphate) == length(Nitrogen)) # Ensure vectors are the same length
@@ -39,16 +39,16 @@ fpw <- function(Phosphate, Nitrogen,
   if (is.null(df_ref)) {
     df_ref <- tibble::tribble(
       ~Water, ~Ref, ~slope, ~intercept,
-      "Atlantic", "Jones1998", 17.499, -3.07,
+      # "Atlantic", "Jones1998", 17.499, -3.07,
       "Atlantic", "Sutherland2009", 20.7, -2.70,
       "Atlantic", "Sherwood2021", 15.54, -0.26,
-      "Atlantic", "Dodd2021", 18.87, -3.21,
+      # "Atlantic", "Dodd2012", 18.87, -3.21,
       "Atlantic", "Jones2008", 18.34862, -3.513761,
-      "Pacific", "Jones1998", 12.368, -10.54,
+      # "Pacific", "Jones1998", 12.368, -10.54,
       "Pacific", "Sutherland2009", 12.4, -10.5,
       "Pacific", "Yamamoto.Kawai2008", 13.957, -11.306,
       "Pacific", "Sherwood2021", 14.07, -11.53,
-      "Pacific", "Dodd2021", 15.38, -14.46,
+      # "Pacific", "Dodd2012", 15.38, -14.46,
       "Pacific", "Jones2008", 15.31394, -14.3951
     )
   }

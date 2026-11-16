@@ -52,6 +52,7 @@ source("DataBase_Nut/20260209/20260209_ClusterStation.R")     # σ₀-spicity wa
 source("DataBase_Nut/20260209/20260209_sw_pspi.r")               # Seawater spicity calculations
 source("DataBase_Nut/20260209/20260209_WaterMass_Classif.R")     # σ₀-spicity water mass classification
 source("DataBase_Nut/20260209/20260209_PacificWater.R")     # σ₀-spicity water mass classification
+source("DataBase_Nut/20260209/20260209_ratio_calc.R")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATA LOADING AND PREPROCESSING
@@ -186,13 +187,18 @@ NOW <-
       replace_na(Nitrite, 0) + 
       replace_na(Ammonium, 0),
     
+    # >>> Nutrient ratios
+    NP  = ratio_calc(Nitrate,  Phosphate, LOD["Nitrate"],  LOD["Phosphate"]),
+    SiN = ratio_calc(Silicate, Nitrate,   LOD["Silicate"], LOD["Nitrate"]),
+    SiP = ratio_calc(Silicate, Phosphate, LOD["Silicate"], LOD["Phosphate"]),
+    
     # >>> “Arctic N–P” tracer (ANP) following Newton et al. 2013.
     ANP = ANP(Phosphate = Phosphate, Nitrogen = TIN),
     
     # >>> Fraction of Pacific Water (%). Function returns 0-1, here multiplied by 100.
     fPW = fpw(
       Phosphate = Phosphate, Nitrogen = TIN,
-      atlantic_ref = "Jones1998",
+      atlantic_ref = "Jones2008",
       pacific_ref = "Yamamoto.Kawai2008"
     ),
     
@@ -211,7 +217,9 @@ NOW <-
   ) %>%
   select(
     Cruise:Salinity,sigma0:spicity,
-    Nitrate:Silicate,TIN,Nstar,NO:POs_star,
+    Nitrate:Silicate,TIN,
+    NP,SiN,SiP,
+    Nstar,NO:POs_star,
     classification,distance,ANP,fPW
   ) %>% 
   filter(!year %in% c(1997, 1998, 1999, 2007, 2008))

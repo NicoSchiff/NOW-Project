@@ -39,28 +39,20 @@ create_endmembers <- function(reference_lon = -75, reference_lat = 76) {
   library(gsw)      # For seawater properties calculations
   
   
-  # Define water mass endmembers with uncertainty estimates
+  # Define water mass endmembers with uncertainty estimates based on Barut et al. (2025)
   endmembers <- tibble(
     watermass = c("PMW", "UHW", "CBAW", "BBPW", "SPMW"),
-    Temperature = c(-1.5, -1.3, 0.0, -1.1, 0.7),     # Mean conservative temperature (°C)
-    Salinity = c(31.2, 32.6, 34.7, 33.6, 34.3),      # Mean absolute salinity (g/kg)
-    temp_sd = c(0.1, 0.1, 0.1, 0.3, 0.6),            # Temperature uncertainty (°C)
-    sal_sd = c(0.9, 0.3, 0.1, 0.2, 0.1)              # Salinity uncertainty (g/kg)
+    SA = c(31.2, 32.6, 34.7, 33.6, 34.3),      # Mean absolute salinity (g/kg)
+    SA_sd = c(0.9, 0.3, 0.1, 0.2, 0.1),              # Salinity uncertainty (g/kg)
+    CT = c(-1.5, -1.3, 0.0, -1.1, 0.7),     # Mean conservative temperature (°C)
+    CT_sd = c(0.1, 0.1, 0.1, 0.3, 0.6)           # Temperature uncertainty (°C)
   ) %>%
     mutate(
       # Calculate potential density anomaly (σ₀) referenced to surface pressure
-      sigma0 = gsw_sigma0(SA = Salinity, CT = Temperature),
+      sigma0 = gsw_sigma0(SA = SA, CT = CT),
       
       # Calculate potential spicity (π₀) - orthogonal coordinate to σ₀
-      spicity = sw_pspi(
-        S = Salinity, 
-        temp = Temperature, 
-        temp_unit = "conservative",    # Using conservative temperature
-        sal_unit = "SA",              # Using absolute salinity
-        longitude = reference_lon,     # Reference longitude for calculation
-        latitude = reference_lat,      # Reference latitude for calculation
-        pr = 0                        # Surface pressure reference
-      )
+      spicity = gsw_pspi(SA, CT, pr = 0)
     )
   
   return(endmembers)

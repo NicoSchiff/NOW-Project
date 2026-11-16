@@ -8,7 +8,7 @@ required_packages <- c(
   "ggOceanMaps", "ggplot2", "ggpmisc", "ggpubr", "ggrepel", 
   "ggspatial", "grid", "gridExtra", "gsw", "lubridate", 
   "MBA", "metR", "pals", "RColorBrewer", "rstatix", 
-  "see", "tibble", "tidyverse", "trend"
+  "see", "tibble", "tidyverse", "trend","legendry"
 )
 
 
